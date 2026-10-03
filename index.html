@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>DocForge — PDF & Writing Workspace</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.4.168/pdf.min.mjs" type="module"></script>
+</head>
+<body>
+  <aside class="sidebar">
+    <div class="brand"><span class="logo">D</span><span>DocForge</span></div>
+    <button class="new-btn" id="uploadBtn">＋ Upload file</button>
+    <nav>
+      <a class="active">⌂ Dashboard</a>
+      <a>▣ Documents</a>
+      <a>✎ Writing</a>
+      <a>▧ Images</a>
+      <a>★ Favorites</a>
+    </nav>
+    <div class="side-bottom">
+      <div class="storage"><span>Storage</span><b id="storageText">0 MB used</b></div>
+      <div class="meter"><i id="meter"></i></div>
+      <small>Local MVP storage</small>
+    </div>
+  </aside>
+
+  <main>
+    <header>
+      <div>
+        <p class="eyebrow">YOUR WORKSPACE</p>
+        <h1>Everything for your documents.</h1>
+        <p class="muted">Extract, write, organize and export from one place.</p>
+      </div>
+      <div class="header-actions">
+        <button class="ghost" id="newWriting">＋ New writing</button>
+        <label class="avatar">A</label>
+      </div>
+    </header>
+
+    <section class="hero">
+      <div>
+        <span class="pill">PDF WORKSPACE</span>
+        <h2>Turn documents into useful content.</h2>
+        <p>Upload a PDF to extract its text and images directly in your browser.</p>
+        <button class="primary" id="heroUpload">Choose a PDF</button>
+      </div>
+      <div class="hero-icon">PDF<br><span>→ TEXT</span></div>
+    </section>
+
+    <section class="grid">
+      <div class="card">
+        <div class="card-head"><h3>Recent documents</h3><button class="link" id="clearFiles">Clear</button></div>
+        <div id="fileList" class="empty">No documents yet. Upload a PDF to begin.</div>
+      </div>
+      <div class="card writing-card">
+        <div class="card-head"><h3>Quick writing</h3><span class="status">Autosaves</span></div>
+        <textarea id="writer" placeholder="Start writing here..."></textarea>
+        <div class="writer-actions">
+          <span id="wordCount">0 words</span>
+          <button class="small" id="downloadTxt">Export .txt</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="card extractor">
+      <div class="card-head">
+        <div><h3>PDF extractor</h3><p class="muted">Your extracted content stays in this browser in this MVP.</p></div>
+        <div class="tools">
+          <button class="small" id="copyText">Copy text</button>
+          <button class="small" id="downloadExtract">Save text</button>
+        </div>
+      </div>
+      <div id="extractStatus" class="extract-status">Upload a PDF to see extracted text.</div>
+      <textarea id="extracted" class="extracted" placeholder="Extracted PDF text will appear here..." readonly></textarea>
+    </section>
+
+    <input id="fileInput" type="file" accept=".pdf,application/pdf" hidden>
+    <footer>DocForge MVP • Built for documents, writing and PDF workflows</footer>
+  </main>
+<script type="module">
+import * as pdfjsLib from "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.4.168/pdf.min.mjs";
+pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.4.168/pdf.worker.min.mjs";
+
+const $ = s => document.querySelector(s);
+const input = $("#fileInput"), list = $("#fileList"), extracted = $("#extracted");
+let files = JSON.parse(localStorage.getItem("docforge_files") || "[]");
+
+function renderFiles(){
+  if(!files.length){ list.className="empty"; list.textContent="No documents yet. Upload a PDF to begin."; }
+  else {
+    list.className="file-list";
+    list.innerHTML=files.map((f,i)=>`<div class="file-row">
+      <span class="file-icon">PDF</span><div><b>${escapeHtml(f.name)}</b><small>${f.pages} pages • ${formatBytes(f.size)}</small></div>
+      <button class="open" data-i="${i}">Open</button></div>`).join("");
+    document.querySelectorAll(".open").forEach(b=>b.onclick=()=>{ extracted.value=files[b.dataset.i].text; $("#extractStatus").textContent="Loaded saved extraction.";});
+  }
+  const total=files.reduce((n,f)=>n+f.size,0);
+  $("#storageText").textContent=formatBytes(total)+" used";
+  $("#meter").style.width=Math.min(total/10_000_000*100,100)+"%";
+}
+function escapeHtml(s){return s.replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
+function formatBytes(n){if(n<1024)return n+" B"; if(n<1048576)return (n/1024).toFixed(1)+" KB"; return (n/1048576).toFixed(1)+" MB";}
+
+async function handleFile(file){
+  if(!file || file.type!=="application/pdf"){ alert("Please choose a PDF file."); return; }
+  $("#extractStatus").textContent="Reading PDF…";
+  const data=await file.arrayBuffer();
+  const pdf=await pdfjsLib.getDocument({data}).promise;
+  let text="";
+  for(let p=1;p<=pdf.numPages;p++){
+    const page=await pdf.getPage(p);
+    const content=await page.getTextContent();
+    text += `\\n--- Page ${p} ---\\n` + content.items.map(x=>x.str).join(" ");
+  }
+  extracted.value=text.trim();
+  $("#extractStatus").textContent=`Extracted ${pdf.numPages} page${pdf.numPages===1?"":"s"}.`;
+  files.unshift({name:file.name,size:file.size,pages:pdf.numPages,text:extracted.value});
+  files=files.slice(0,20); localStorage.setItem("docforge_files",JSON.stringify(files)); renderFiles();
+}
+input.onchange=e=>handleFile(e.target.files[0]);
+$("#uploadBtn").onclick=()=>input.click(); $("#heroUpload").onclick=()=>input.click();
+$("#clearFiles").onclick=()=>{files=[];localStorage.removeItem("docforge_files");renderFiles();};
+$("#copyText").onclick=()=>navigator.clipboard.writeText(extracted.value||"");
+$("#downloadExtract").onclick=()=>download(extracted.value,"extracted-text.txt","text/plain");
+$("#newWriting").onclick=()=>$("#writer").focus();
+const writer=$("#writer");
+writer.value=localStorage.getItem("docforge_writing")||"";
+writer.oninput=()=>{localStorage.setItem("docforge_writing",writer.value); $("#wordCount").textContent=(writer.value.trim().match(/\\S+/g)||[]).length+" words";};
+$("#downloadTxt").onclick=()=>download(writer.value,"docforge-writing.txt","text/plain");
+function download(content,name,type){const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([content],{type}));a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),500);}
+renderFiles(); writer.oninput();
+</script>
+</body>
+</html>
